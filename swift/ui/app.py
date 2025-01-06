@@ -4,6 +4,7 @@ from dataclasses import fields
 from functools import partial
 from typing import List, Union
 
+from fastapi import File, UploadFile
 import gradio as gr
 from packaging import version
 from transformers.utils import strtobool
@@ -107,7 +108,70 @@ class SwiftWebUI(SwiftPipeline):
                     partial(LLMEval.update_input_model, arg_cls=EvalArguments, has_record=False),
                     inputs=[LLMEval.element('model')],
                     outputs=list(LLMEval.valid_elements().values()))
-        app.queue(**concurrent).launch(server_name=server, inbrowser=True, server_port=port, height=800, share=share)
+        
+        fastApi, local_url, share_url = app.queue(**concurrent).launch(
+            server_name=server, 
+            inbrowser=True, 
+            server_port=port, 
+            height=800, 
+            share=share, 
+            prevent_thread_lock=True)
+
+        @fastApi.post("/custome/post")
+        async def custome_post(dataset_file: UploadFile = File(...)):
+            return {'msg': 'custome post'}
+        
+        @fastApi.get("/gradio_api/invoke/list_models")
+        async def support_model_list():
+            from swift.llm.model.register import get_all_models
+            return get_all_models()
+
+        @fastApi.get("/gradio_api/invoke/list_gpus")
+        async def list_gpus():
+            import torch
+
+            gpu_count = 0
+            if torch.cuda.is_available():
+                gpu_count = torch.cuda.device_count()
+            return [str(i) for i in range(gpu_count)] + ['cpu']
+
+        @fastApi.get("/gradio_api/invoke/model_meta")
+        async def get_model_meta(model_id: str):
+            from swift.llm import TEMPLATE_MAPPING
+            from swift.llm.model.register import get_matched_model_meta
+
+            model_meta = get_matched_model_meta(model_id)
+            return {
+                'model_type': model_meta.model_type, 
+                'model_template': model_meta.template,
+                'model_system': TEMPLATE_MAPPING[model_meta.template].default_system
+            }
+
+        @fastApi.post("/uploadfile")
+        async def upload_file(dataset_file: UploadFile = File(...)):
+            try:
+                import os
+                import uuid
+                import tempfile
+                import shutil
+                from datetime import datetime
+
+                dataset_path = os.path.join("sft_dataset", 'user_assistant')
+                if not os.path.exists(dataset_path):
+                        os.makedirs(dataset_path)
+                
+                tmp_fd, tmp_path = tempfile.mkstemp(
+                    dir=os.path.join('sft_dataset', 'user_assistant'))
+                with os.fdopen(tmp_fd, "wb") as tmp:
+                    tmp.write(await dataset_file.read())
+                
+                dst = os.path.join('sft_dataset', 'user_assistant', f'{uuid.uuid4()}_{dataset_file.filename}')
+                shutil.move(tmp_path, dst)
+                return {'location': os.path.abspath(dst)}
+            except Exception as e:
+                raise e
+        app.block_thread()
+        return fastApi, local_url, share_url
 
 
 def webui_main(args: Union[List[str], WebUIArguments, None] = None):

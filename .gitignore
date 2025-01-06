@@ -146,3 +146,4 @@ images
 
 # ast template
 ast_index_file.py
+sft_dataset/user_assistant

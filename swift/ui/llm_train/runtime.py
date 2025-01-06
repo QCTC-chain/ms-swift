@@ -240,7 +240,7 @@ class Runtime(BaseUI):
                 with gr.Row():
                     gr.Textbox(elem_id='log', lines=6, visible=False)
                 with gr.Row():
-                    gr.Dropdown(elem_id='running_tasks', scale=10)
+                    gr.Dropdown(elem_id='running_tasks', scale=10, allow_custom_value=True)
                     gr.Button(elem_id='refresh_tasks', scale=1)
                     gr.Button(elem_id='kill_task', scale=1)
 
