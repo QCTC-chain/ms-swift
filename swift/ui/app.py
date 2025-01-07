@@ -117,16 +117,55 @@ class SwiftWebUI(SwiftPipeline):
             share=share, 
             prevent_thread_lock=True)
 
-        @fastApi.post("/custome/post")
-        async def custome_post(dataset_file: UploadFile = File(...)):
-            return {'msg': 'custome post'}
+        self.registry_external_api_request(fastApi)
+
+        app.block_thread()
+        return fastApi, local_url, share_url
+    
+    def registry_external_api_request(self, fastApi):
+        @fastApi.get("/external_api/invoke/show_log")
+        async def show_log(logging_dir: str, offset: int):
+            import collections
+            import os.path
+
+
+            def trained_percent(line):
+                parts = line.split('Train:')
+                if len(parts) > 1:
+                    percent_str = parts[1].split('|')[0].strip()
+                    if percent_str.endswith('%'):
+                        percent_value = percent_str[:-1]
+                        return percent_value
+                return None
+
+            log_file = os.path.join(logging_dir, 'run.log')
+            maxlen = int(os.environ.get('MAX_LOG_LINES', 50))
+            lines = collections.deque(maxlen=maxlen)
+            trained_process = None
+            try:
+                with open(log_file, 'r', encoding='utf-8') as input:
+                    # Skip lines until start_line
+                    for _ in range(offset):
+                        next(input, None)
+
+                    # Read the next num_lines lines
+                    for _ in range(maxlen):
+                        line = input.readline()
+                        if not line:
+                            break
+                        if line.startswith('Train:'):
+                            trained_process = trained_percent(line)
+                        lines.append(line)
+                    return {'data': lines,'trained': trained_process, 'next': len(lines)}
+            except IOError:
+                pass
         
-        @fastApi.get("/gradio_api/invoke/list_models")
+        @fastApi.get("/external_api/invoke/list_models")
         async def support_model_list():
             from swift.llm.model.register import get_all_models
             return get_all_models()
 
-        @fastApi.get("/gradio_api/invoke/list_gpus")
+        @fastApi.get("/external_api/invoke/list_gpus")
         async def list_gpus():
             import torch
 
@@ -135,7 +174,7 @@ class SwiftWebUI(SwiftPipeline):
                 gpu_count = torch.cuda.device_count()
             return [str(i) for i in range(gpu_count)] + ['cpu']
 
-        @fastApi.get("/gradio_api/invoke/model_meta")
+        @fastApi.get("/external_api/invoke/model_meta")
         async def get_model_meta(model_id: str):
             from swift.llm import TEMPLATE_MAPPING
             from swift.llm.model.register import get_matched_model_meta
@@ -147,7 +186,7 @@ class SwiftWebUI(SwiftPipeline):
                 'model_system': TEMPLATE_MAPPING[model_meta.template].default_system
             }
 
-        @fastApi.post("/uploadfile")
+        @fastApi.post("/external_api/invoke/uploadfile")
         async def upload_file(dataset_file: UploadFile = File(...)):
             try:
                 import os
@@ -170,9 +209,6 @@ class SwiftWebUI(SwiftPipeline):
                 return {'location': os.path.abspath(dst)}
             except Exception as e:
                 raise e
-        app.block_thread()
-        return fastApi, local_url, share_url
-
 
 def webui_main(args: Union[List[str], WebUIArguments, None] = None):
     return SwiftWebUI(args).main()
