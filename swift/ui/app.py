@@ -182,6 +182,16 @@ class SwiftWebUI(SwiftPipeline):
                 gpu_count = torch.cuda.device_count()
             return [str(i) for i in range(gpu_count)] + ['cpu']
 
+        @fastApi.get("/external_api/invoke/list_quant_methods")
+        async def support_quant_list():
+            quant_methods = ['gptq', 'aqlm', 'awq']
+            return quant_methods
+
+        @fastApi.get("/external_api/invoke/list_quant_bits")
+        async def support_quant_bits_list():
+            quant_bits = [1, 2, 3, 4, 8]
+            return quant_bits
+
         @fastApi.get("/external_api/invoke/model_meta")
         async def get_model_meta(model_id: str):
             from swift.llm import TEMPLATE_MAPPING,BaseArguments
