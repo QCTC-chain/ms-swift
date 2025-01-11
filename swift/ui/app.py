@@ -124,10 +124,13 @@ class SwiftWebUI(SwiftPipeline):
     
     def registry_external_api_request(self, fastApi):
         @fastApi.get("/external_api/invoke/show_log")
-        async def show_log(logging_dir: str, offset: int):
+        async def show_log(
+            logging_dir: str = None,
+            file_name: str = None,
+            log_file: str = None,
+            offset: int = 0):
             import collections
             import os.path
-
 
             def trained_percent(line):
                 parts = line.split('Train:')
@@ -138,7 +141,12 @@ class SwiftWebUI(SwiftPipeline):
                         return percent_value
                 return None
 
-            log_file = os.path.join(logging_dir, 'run.log')
+            if not log_file:
+                log_file = os.path.join(logging_dir, file_name)
+
+            if not os.path.isfile(log_file):
+                raise Exception(f'必须指定 log_file 或同时指定 logging_dir 和 file_name')
+
             maxlen = int(os.environ.get('MAX_LOG_LINES', 50))
             lines = collections.deque(maxlen=maxlen)
             trained_process = None
@@ -176,15 +184,27 @@ class SwiftWebUI(SwiftPipeline):
 
         @fastApi.get("/external_api/invoke/model_meta")
         async def get_model_meta(model_id: str):
-            from swift.llm import TEMPLATE_MAPPING
+            from swift.llm import TEMPLATE_MAPPING,BaseArguments
             from swift.llm.model.register import get_matched_model_meta
 
             model_meta = get_matched_model_meta(model_id)
-            return {
-                'model_type': model_meta.model_type, 
-                'model_template': model_meta.template,
-                'model_system': TEMPLATE_MAPPING[model_meta.template].default_system
-            }
+            if model_meta:
+                return {
+                    'model_type': model_meta.model_type, 
+                    'model_template': model_meta.template,
+                    'model_system': TEMPLATE_MAPPING[model_meta.template].default_system
+                }
+            
+            local_args_path = os.path.join(model_id, 'args.json')
+            if os.path.exists(local_args_path):
+                args = BaseArguments(ckpt_dir=model_id, load_data_args=True)
+                template = getattr(args, 'template', None)
+                return {
+                    'model_type': getattr(args, 'model_type', None), 
+                    'model_template': template,
+                    'model_system': TEMPLATE_MAPPING[template].default_system
+                }
+            
 
         @fastApi.post("/external_api/invoke/uploadfile")
         async def upload_file(dataset_file: UploadFile = File(...)):
