@@ -360,6 +360,29 @@ def get_all_models() -> List[str]:
                             models.append(model.ms_model_id)
     return models
 
+def get_all_models_with_filter(model_type_filter: List[str], model_id_filter: List[str]) -> List[str]:
+    use_hf = strtobool(os.environ.get('USE_HF', 'False'))
+    models: Dict[str, List[str]] = {}
+
+    for model_type in ModelType.get_model_name_list():
+        if model_type in model_type_filter:
+            continue
+        model_meta = MODEL_MAPPING.get(model_type)
+
+        model_ids = []
+        if model_meta:
+            for group in model_meta.model_groups:
+                for model in group.models:
+                    if use_hf:
+                        if model.hf_model_id and not model.hf_model_id in model_id_filter:
+                            model_ids.append(model.hf_model_id)
+                    else:
+                        if model.ms_model_id and not model.ms_model_id in model_id_filter:
+                            model_ids.append(model.ms_model_id)
+
+        models[model_type] = model_ids
+    return models
+
 
 def get_matched_model_meta(model_id_or_path: str) -> Optional[ModelMeta]:
     model_name = get_model_name(model_id_or_path).lower()
