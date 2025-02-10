@@ -13,3 +13,4 @@ from .torch_utils import (Serializer, activate_parameters, find_all_linears, fin
 from .utils import (add_version_to_work_dir, check_json_format, deep_getattr, find_free_port, get_env_args, lower_bound,
                     parse_args, patch_getattr, read_multi_line, seed_everything, split_list, subprocess_run, test_time,
                     upper_bound)
+from .oss import Oss

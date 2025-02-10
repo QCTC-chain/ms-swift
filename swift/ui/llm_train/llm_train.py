@@ -4,9 +4,12 @@ import os
 import re
 import sys
 import time
+import shutil
+import tempfile
 from functools import partial
 from subprocess import PIPE, STDOUT, Popen
 from typing import Dict, Type
+from urllib.parse import urlparse
 
 import gradio as gr
 import json
@@ -30,6 +33,7 @@ from swift.ui.llm_train.runtime import Runtime
 from swift.ui.llm_train.save import Save
 from swift.ui.llm_train.self_cog import SelfCog
 from swift.utils import get_logger
+from swift.utils import Oss
 
 logger = get_logger()
 
@@ -278,6 +282,60 @@ class LLMTrain(BaseUI):
         return gr.update(open=True), gr.update(visible=True)
 
     @classmethod
+    def parse_dataset(cls, dataset):
+        results = []
+        if isinstance(dataset, list):
+            pass
+        elif isinstance(dataset, str):
+            dataset = dataset.split(' ')
+
+        for path in dataset:
+            if path.startswith('oss://'):
+                local_path = cls.fetch_data_from_oss(path)
+                results.append(local_path)
+            else:
+                results.append(path)
+        return results
+
+    @staticmethod
+    def fetch_data_from_oss(oss_path: str):
+        try:
+            # oss_path format: 
+            # oss://access_key:access_secret@127.0.0.1:9000/bucketname/object_name
+            # 解析 URL
+            parsed_url = urlparse(oss_path)
+            # 提取访问密钥和密钥密钥
+            auth_info = parsed_url.netloc.split('@')[0]
+            oss_access_key, oss_access_key_secret = auth_info.split(':')
+            # 提取端点
+            oss_endpoint = parsed_url.netloc.split('@')[1]
+            # 提取存储桶名称和对象名称
+            path_parts = parsed_url.path.strip('/').split('/', 1)
+            oss_bucket_name = path_parts[0]
+            oss_object_name = path_parts[1] if len(path_parts) > 1 else ''
+            extension = oss_object_name.rsplit(".", 1)[-1]
+            
+            minio_client = Oss(
+                access_key_id=oss_access_key,
+                access_secret_key=oss_access_key_secret,
+                bucket_name=oss_bucket_name,
+                endpoint=oss_endpoint
+            )
+
+            _, tmp_path = tempfile.mkstemp()
+            minio_client.download_file(
+                bucket_name=oss_bucket_name,
+                object_name=oss_object_name, 
+                save_path=tmp_path)
+            dataset_path = f'{tmp_path}.{extension}'
+            shutil.move(tmp_path, dataset_path)
+            return dataset_path
+
+        except Exception as e:
+            logger.error(f'fetching data from oss was failure. {str(e)}')
+            raise e
+
+    @classmethod
     def train(cls, *args):
         ignore_elements = ('logging_dir', 'more_params', 'train_stage')
         default_args = cls.get_default_value_from_dataclass(RLHFArguments)
@@ -313,6 +371,10 @@ class LLMTrain(BaseUI):
         kwargs.update(more_params)
         if 'dataset' not in kwargs and 'custom_train_dataset_path' not in kwargs:
             raise gr.Error(cls.locale('dataset_alert', cls.lang)['value'])
+
+        dataset = kwargs.get('dataset')
+        dataset = cls.parse_dataset(dataset=dataset)
+        kwargs.update({'dataset': dataset})
 
         model = kwargs.get('model')
         if os.path.exists(model) and os.path.exists(os.path.join(model, 'args.json')):
