@@ -132,15 +132,6 @@ class SwiftWebUI(SwiftPipeline):
             import collections
             import os.path
 
-            def trained_percent(line):
-                parts = line.split('Train:')
-                if len(parts) > 1:
-                    percent_str = parts[1].split('|')[0].strip()
-                    if percent_str.endswith('%'):
-                        percent_value = percent_str[:-1]
-                        return percent_value
-                return None
-
             if not log_file:
                 log_file = os.path.join(logging_dir, file_name)
 
@@ -149,7 +140,6 @@ class SwiftWebUI(SwiftPipeline):
 
             maxlen = int(os.environ.get('MAX_LOG_LINES', 50))
             lines = collections.deque(maxlen=maxlen)
-            trained_process = None
             try:
                 with open(log_file, 'r', encoding='utf-8') as input:
                     # Skip lines until start_line
@@ -161,12 +151,58 @@ class SwiftWebUI(SwiftPipeline):
                         line = input.readline()
                         if not line:
                             break
-                        if line.startswith('Train:'):
-                            trained_process = trained_percent(line)
                         lines.append(line)
-                    return {'data': lines,'trained': trained_process, 'next': len(lines)}
+                    return {
+                        'data': lines,
+                        '__offset__': len(lines) + offset}
             except IOError:
                 pass
+
+        @fastApi.get("/external_api/invoke/sft_process_status")
+        async def sft_process_status(
+            logging_dir: str, 
+            file_name: str = None,
+            offset: int = 0):
+            import collections
+            import os.path
+
+            def trained_percent(line):
+                parts = line.split('Train:')
+                if len(parts) > 1:
+                    percent_str = parts[1].split('|')[0].strip()
+                    if percent_str.endswith('%'):
+                        percent_value = percent_str[:-1]
+                        return percent_value
+                return '0.0' 
+
+            log_file = os.path.join(logging_dir, file_name)
+            if not os.path.isfile(log_file):
+                raise Exception(f'日志文件不存在 {log_file}')
+
+            maxlen = int(os.environ.get('MAX_LOG_LINES', 50))
+            lines = offset 
+            trained_process = '0.0' 
+            try:
+                with open(log_file, 'r', encoding='utf-8') as input:
+                    # Skip lines until start_line
+                    for _ in range(offset):
+                        next(input, None)
+
+                    # Read the next num_lines lines
+                    for _ in range(maxlen):
+                        line = input.readline()
+                        if not line:
+                            break
+                        lines += 1
+                        if line.startswith('Train:'):
+                            trained_process = trained_percent(line)
+                            break
+                return {
+                    'trained': trained_process, 
+                    '__offset__': lines}
+            except IOError:
+                pass
+            
         
         @fastApi.get("/external_api/invoke/list_models")
         async def support_model_list():
