@@ -1,5 +1,8 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import os
+import os.path
+import collections
+import json
 from dataclasses import fields
 from functools import partial
 from typing import List, Union
@@ -129,8 +132,6 @@ class SwiftWebUI(SwiftPipeline):
             file_name: str = None,
             log_file: str = None,
             offset: int = 0):
-            import collections
-            import os.path
 
             if not log_file:
                 log_file = os.path.join(logging_dir, file_name)
@@ -158,13 +159,12 @@ class SwiftWebUI(SwiftPipeline):
             except IOError:
                 pass
 
-        @fastApi.get("/external_api/invoke/sft_process_status")
-        async def sft_process_status(
+        @fastApi.get("/external_api/invoke/train_task_runtime_status")
+        async def train_task_runtime_status(
             logging_dir: str, 
             file_name: str = None,
+            task_type: int = 1, # 1-训练 2-部署 3-推理 4-评估 5-导出
             offset: int = 0):
-            import collections
-            import os.path
 
             def trained_percent(line):
                 parts = line.split('Train:')
@@ -181,7 +181,7 @@ class SwiftWebUI(SwiftPipeline):
 
             maxlen = int(os.environ.get('MAX_LOG_LINES', 50))
             lines = offset 
-            trained_process = '0.0' 
+            completed_progress = '0.0' 
             try:
                 with open(log_file, 'r', encoding='utf-8') as input:
                     # Skip lines until start_line
@@ -194,15 +194,31 @@ class SwiftWebUI(SwiftPipeline):
                         if not line:
                             break
                         lines += 1
-                        if line.startswith('Train:'):
-                            trained_process = trained_percent(line)
+                        if task_type == 1 and line.startswith('Train:'):
+                            completed_progress = trained_percent(line)
+                            break
+
+                        if task_type == 2 and 'Uvicorn running on' in line:
+                            completed_progress = '100.0'
                             break
                 return {
-                    'trained': trained_process, 
+                    'completed_progress': completed_progress, 
                     '__offset__': lines}
             except IOError:
                 pass
             
+        @fastApi.get("/external_api/invoke/refresh_tasks")
+        async def refresh_tasks(output_dir: str):
+            try:
+                results = []
+                logging_jsonl = os.path.join(output_dir, 'logging.jsonl')
+                with open(logging_jsonl, 'r', encoding='utf-8') as input:
+                    for _ in range(4):
+                        line = input.readline()
+                        results.append(json.loads(line))
+                return {'logging': results}
+            except IOError:
+                pass
         
         @fastApi.get("/external_api/invoke/list_models")
         async def support_model_list():
@@ -448,7 +464,6 @@ class SwiftWebUI(SwiftPipeline):
         @fastApi.post("/external_api/invoke/uploadfile")
         async def upload_file(dataset_file: UploadFile = File(...)):
             try:
-                import os
                 import uuid
                 import tempfile
                 import shutil
