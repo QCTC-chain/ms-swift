@@ -251,7 +251,7 @@ class SwiftWebUI(SwiftPipeline):
                             'Qwen/Qwen1.5-32B-Chat',
                             'Qwen/Qwen1.5-72B-Chat',
                             'Qwen/Qwen1.5-110B-Chat',
-                            'Qwen/Qwen1.5-0.5B',
+                            # 'Qwen/Qwen1.5-0.5B',
                             'Qwen/Qwen1.5-1.8B',
                             'Qwen/Qwen1.5-4B',
                             'Qwen/Qwen1.5-7B',
