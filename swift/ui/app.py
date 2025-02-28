@@ -461,6 +461,94 @@ class SwiftWebUI(SwiftPipeline):
                 }
             
 
+        @fastApi.get("/external_api/invoke/check_memory")
+        async def check_memory_available(
+            model_id: str, 
+            train: bool, 
+            gpus: str # cpu | 0,1,2,3
+        ):
+            import torch
+            from swift.llm.model.register import get_model_tokenizer, get_model_info_meta
+            from swift.utils.torch_utils import get_n_params_grads
+
+            def extract_model_size_from(model_id):
+                import re
+                # 定义正则表达式模式
+                pattern = r'\d*\.?\d+B'
+                # 提取模型大小并转换为数字
+                match = re.search(pattern, model_id)
+                if match:
+                    size_str = match.group()  # 提取匹配部分，例如 "0.5B" 或 "7B"
+                    size_num = float(size_str.rstrip('B'))  # 去掉 "B" 并转换为浮点数
+                    return size_num
+                return None
+
+
+            model_info, _ = get_model_info_meta(model_id)
+            torch_dtype = model_info.torch_dtype
+            
+            # model, _ = get_model_tokenizer(model_id_or_path=model_id)
+            # print(f'{model}')
+            # n_params, n_grads = get_n_params_grads(model)
+            # n_params = sum(n_params)
+            # n_grads = sum(n_grads)
+            n_params = extract_model_size_from(model_id) or 10.0
+            #LoRA微调百分比
+            n_grads = n_params * 0.005
+
+            available = False
+            available_memory = 0.0
+            if torch.cuda.is_available():
+                def __get_cuda_memory(index: int):
+                    total_memory = torch.cuda.get_device_properties(index).total_memory
+                    # 获取当前 GPU 的已用显存（以字节为单位）
+                    allocated_memory = torch.cuda.memory_allocated(index)
+                    # 获取当前 GPU 的缓存显存（以字节为单位）
+                    cached_memory = torch.cuda.memory_reserved(index)
+                    # 将字节转换为 GB
+                    total_memory = total_memory / (1024 ** 3)
+                    allocated_memory = allocated_memory / (1024 ** 3)
+                    cached_memory = cached_memory / (1024 ** 3)
+
+                    return total_memory,allocated_memory, cached_memory 
+
+                gpus = gpus.split(',')
+                for gpu in gpus:
+                    try:
+                        _, available, _ = __get_cuda_memory(int(gpu))
+                        available_memory += available
+                    except ValueError:
+                        pass
+
+            else:
+                import psutil
+                available_memory = psutil.virtual_memory().available
+                available_memory = available_memory / (1024 ** 3)
+
+            if train:
+                if torch_dtype == torch.float32:
+                    need_memory = (n_params + n_grads* (32/8) * 4) * 1.2
+                elif torch_dtype == torch.bfloat16 or torch_dtype == torch.float16:
+                    need_memory = (n_params + n_grads* (16/8) * 4) * 1.2
+                else:
+                    need_memory = (n_params + n_grads * 4) * 1.2
+            else:
+                need_memory = n_params * 1.2
+
+            if torch_dtype == torch.float32:
+                need_memory *= 4
+            elif torch_dtype == torch.bfloat16 or torch_dtype == torch.float16:
+                need_memory *= 2
+
+            available = available_memory > need_memory
+            return {
+                'available': available, 
+                'torch_dtype': f'{torch_dtype}',
+                'n_params': f'{n_params: .2f} B', 
+                'n_grads': f'{n_grads: .2f} B', 
+                'need_memory': f'{need_memory: .2f} GB',
+                'available_memory': f'{available_memory: .2f} GB'}
+
         @fastApi.post("/external_api/invoke/uploadfile")
         async def upload_file(dataset_file: UploadFile = File(...)):
             try:
