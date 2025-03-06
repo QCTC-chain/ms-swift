@@ -233,7 +233,7 @@ class SwiftWebUI(SwiftPipeline):
                       'telechat2', 'telechat2_115b', 'mistral', 'zephyr', 'mixtral', 'mistral_nemo', 'wizardlm2',
                       'wizardlm2_moe', 'phi2', 'phi2_small', 'phi3', 'phi3_moe', 'gemma', 'skywork', 'skywork_o1',
                       'orion', 'xverse', 'xverse_moe', 'seggpt', 'bluelm', 'c4ai', 'dbrx', 'grok', 'mamba', 'polylm',
-                      'aya', 'yuan2', 'phi3_small', 'gemma2', 'chatglm3', 'yi_coder', 'llama3', 'llama3_1', 'qwen2']
+                      'aya', 'yuan2', 'phi3_small', 'gemma2', 'chatglm3', 'yi_coder', 'llama3', 'llama3_1']
             # 过滤所有的多模态大模型
             for k in MLLMModelType.__dict__:
                 if k.startswith('__'):
